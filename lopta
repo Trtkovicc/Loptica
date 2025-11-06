@@ -1,0 +1,257 @@
+<!DOCTYPE html> 
+<html lang="hr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Jednostavna platform igra (srednja škola primjer)</title>
+  <style>
+    html,body{height:100%;margin:0;background:#87ceeb;font-family:Arial,Helvetica,sans-serif}
+    #game{display:block;margin:20px auto;background:#7ec850;box-shadow:0 6px 18px rgba(0,0,0,0.25)}
+    .ui{width:800px;margin:0 auto;text-align:left;color:#fff}
+    .hud{display:flex;justify-content:space-between;padding:6px 10px;background:rgba(0,0,0,0.35);border-radius:6px}
+    .hint{font-size:13px;opacity:0.9}
+    .controls{font-size:13px}
+    .credit{font-size:12px;color:#222;margin-top:6px}
+  </style>
+</head>
+<body>
+  <div class="ui">
+    <div class="hud">
+      <div>Rezultat: <span id="score">0</span></div>
+      <div class="hint">Sakupljaj lopticu da dobiješ bod — pozicije se resetuju</div>
+      <div class="controls">Kontrole: strelice ← → ili A/D = pomak, Space = skok</div>
+    </div>
+    <canvas id="game" width="800" height="450"></canvas>
+    <div class="credit">Napomena: Ovo je jednostavan primjer za srednju školu — možeš ga mijenjati i proširiti.</div>
+  </div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// Igračke varijable
+let score = 0;
+const gravity = 0.8;
+
+// Igrač
+const player = {
+  x: 60,
+  y: H - 120,
+  w: 34,
+  h: 48,
+  vx: 0,
+  vy: 0,
+  speed: 4.5,
+  jumpPower: 14,
+  onGround: false,
+  color: '#283593'
+};
+const playerStart = {x: player.x, y: player.y};
+
+// Platforme (x, y, width, height)
+const platforms = [
+  {x:0, y:H-20, w:W, h:20}, // tlo
+  {x:120, y:H-120, w:140, h:16},
+  {x:320, y:H-200, w:120, h:16},
+  {x:520, y:H-140, w:160, h:16},
+  {x:220, y:H-300, w:90, h:16}
+];
+
+// Loptica (kolekcionarni objekt s fizikom)
+let ball = {
+  x: 0, y: 0, r: 12,
+  vx: 2 + Math.random()*2, // horizontalna brzina
+  vy: 0,
+  collected: false,
+  color: '#00ffec'
+};
+
+// Kontrole
+const keys = {left:false,right:false,jump:false};
+window.addEventListener('keydown', e => {
+  if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+  if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+  if(e.code === 'Space') keys.jump = true;
+});
+window.addEventListener('keyup', e => {
+  if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+  if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+  if(e.code === 'Space') keys.jump = false;
+});
+
+// Pomoćne funkcije
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+
+function placeBallRandom(){
+  // Stavi lopticu na neku platformu ili na tlo
+  const choice = Math.random();
+  if(choice < 0.8){
+    const picks = platforms.filter(p => p.h < 40 && p.y < H-80);
+    const p = picks[Math.floor(Math.random()*picks.length)];
+    ball.x = clamp(p.x + 20 + Math.random()*(p.w-40), 50, W-80);
+    ball.y = p.y - ball.r - 2;
+  } else {
+    ball.x = 100 + Math.random()*(W-200);
+    ball.y = H - 40 - ball.r;
+  }
+  ball.vx = (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random()*2);
+  ball.vy = -5;
+  ball.collected = false;
+}
+
+function resetPositions(){
+  player.x = playerStart.x;
+  player.y = playerStart.y;
+  player.vx = 0; player.vy = 0; player.onGround = false;
+  placeBallRandom();
+}
+
+function rectVsRect(a,b){
+  return !(a.x + a.w < b.x || a.x > b.x + b.w || a.y + a.h < b.y || a.y > b.y + b.h);
+}
+
+function update(){
+  // === IGRAČ ===
+  if(keys.left) player.vx = -player.speed;
+  else if(keys.right) player.vx = player.speed;
+  else player.vx = 0;
+
+  if(keys.jump && player.onGround){
+    player.vy = -player.jumpPower;
+    player.onGround = false;
+  }
+
+  player.vy += gravity;
+  player.x += player.vx;
+  player.y += player.vy;
+
+  if(player.x < 0) player.x = 0;
+  if(player.x + player.w > W) player.x = W - player.w;
+
+  player.onGround = false;
+  for(let p of platforms){
+    const platRect = {x:p.x, y:p.y, w:p.w, h:p.h};
+    const playerRect = {x:player.x, y:player.y, w:player.w, h:player.h};
+    if(rectVsRect(playerRect, platRect)){
+      if(player.vy >= 0 && player.y + player.h - player.vy <= p.y + 5){
+        player.y = p.y - player.h;
+        player.vy = 0;
+        player.onGround = true;
+      } else {
+        if(player.x < p.x) player.x = p.x - player.w - 0.1;
+        else player.x = p.x + p.w + 0.1;
+        player.vx = 0;
+      }
+    }
+  }
+
+  if(player.y > H + 200){
+    resetPositions();
+  }
+
+  // === LOPTICA S GRAVITACIJOM ===
+  if (!ball.collected) {
+    ball.vy += gravity * 0.8;
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+
+    // zidovi
+    if (ball.x - ball.r < 0) {
+      ball.x = ball.r;
+      ball.vx *= -1;
+    }
+    if (ball.x + ball.r > W) {
+      ball.x = W - ball.r;
+      ball.vx *= -1;
+    }
+
+    // sudar s platformama
+    for (let p of platforms) {
+      if (
+        ball.x > p.x && ball.x < p.x + p.w &&
+        ball.y + ball.r > p.y && ball.y + ball.r < p.y + 16 &&
+        ball.vy > 0
+      ) {
+        ball.y = p.y - ball.r;
+        ball.vy *= -0.7;
+      }
+    }
+
+    // tlo
+    if (ball.y + ball.r > H - 20) {
+      ball.y = H - 20 - ball.r;
+      ball.vy *= -0.75;
+      if (Math.abs(ball.vy) < 1) ball.vy = 0;
+    }
+  }
+
+  // === Sakupljanje loptice ===
+  const dx = (player.x + player.w/2) - ball.x;
+  const dy = (player.y + player.h/2) - ball.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if(dist < ball.r + Math.max(player.w, player.h)/3 && !ball.collected){
+    ball.collected = true;
+    score += 1;
+    document.getElementById('score').textContent = score;
+    setTimeout(()=>{ resetPositions(); }, 220);
+  }
+}
+
+function drawGrid(){
+  for(let i=0;i<6;i++){
+    ctx.fillStyle = i%2? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)';
+    ctx.fillRect(0, H - 20 - i*12, W, 6);
+  }
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  drawGrid();
+
+  // platforme
+  for(let p of platforms){
+    ctx.fillStyle = '#6d4c41';
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.strokeRect(p.x, p.y, p.w, p.h);
+  }
+
+  // loptica
+  if(!ball.collected){
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+    ctx.fillStyle = ball.color;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+    ctx.stroke();
+  }
+
+  // igrač
+  ctx.fillStyle = player.color;
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+  ctx.fillStyle = '#ffeb3b';
+  ctx.fillRect(player.x + 6, player.y - 10, player.w - 12, 12);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(player.x + 12, player.y - 8, 4, 4);
+  ctx.fillRect(player.x + 20, player.y - 8, 4, 4);
+
+  ctx.globalAlpha = 0.06;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(player.x, player.y, player.w, player.h/2);
+  ctx.globalAlpha = 1;
+}
+
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// Inicijalizacija
+resetPositions();
+loop();
+</script>
+</body>
+</html>
